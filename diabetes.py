@@ -2,7 +2,7 @@ import pandas as pd
 import numpy as np
 from sklearn.model_selection import train_test_split
 from sklearn.ensemble import RandomForestClassifier
-from sklearn.metrics import accuracy_score, confusion_matrix
+from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
 import joblib
 import streamlit as st
 import matplotlib.pyplot as plt
@@ -29,33 +29,9 @@ def load_data(file_path='dataset/diabetes.csv'):
 
 # 모델 학습 함수
 def train_model(X_train, y_train):
-    # 랜덤 포레스트 모델을 학습시키는 함수
     model = RandomForestClassifier(random_state=42)  # random_state를 고정하여 결과의 재현성 보장
     model.fit(X_train, y_train)  # 학습 데이터로 모델을 학습
     return model
-
-# 모델 평가 함수 (혼동 행렬 추가)
-def evaluate_model(model, X_test, y_test):
-    st.write("### 1. 혼동 행렬")  # 제목 출력
-    # 모델을 평가하는 함수. 예측 결과와 실제 값 비교
-    y_pred = model.predict(X_test)  # 테스트 데이터로 예측
-    accuracy = accuracy_score(y_test, y_pred)  # 정확도 계산
-    
-    # 혼동 행렬 계산
-    cm = confusion_matrix(y_test, y_pred)  # 실제 값과 예측 값의 혼동 행렬 생성
-    fig, ax = plt.subplots(figsize=(6, 6))  # 그래프 크기 설정
-    sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', xticklabels=['Negative', 'Positive'], yticklabels=['Negative', 'Positive'])  # 혼동 행렬을 시각화
-    plt.title('혼동 행렬 (Confusion Matrix)')  # 그래프 제목 설정
-    plt.xlabel('예측')  # x축 레이블
-    plt.ylabel('실제')  # y축 레이블
-    st.pyplot(fig)  # Streamlit에서 시각화된 그래프 출력
-    
-    return accuracy  # 모델 정확도 반환
-
-# 모델 저장 함수
-def save_model(model, model_filename='diabetes_model.pkl'):
-    # 학습된 모델을 파일로 저장
-    joblib.dump(model, model_filename)
 
 # 모델 로드 함수
 def load_trained_model(model_filename='diabetes_model.pkl'):
@@ -72,7 +48,7 @@ def predict_diabetes(model, glucose, bmi, age):
 # 데이터 분석 및 시각화 함수
 def visualize_data(data):
     # 데이터의 분포를 시각화하는 함수
-    st.write("### 2. 데이터 분포")  # 제목 출력
+    st.write("### 1. 데이터 분포")  # 제목 출력
     fig, axes = plt.subplots(1, 3, figsize=(15, 5))  # 1행 3열의 서브플롯 생성
     
     # 혈당(Glucose) 분포
@@ -96,19 +72,28 @@ def visualize_data(data):
     plt.tight_layout()  # 서브플롯 간의 간격 자동 조정
     st.pyplot(fig)  # Streamlit에서 시각화된 그래프 출력
 
-# 산점도 시각화 함수
-def visualize_feature_relationships(data):
-    # 특성 간 관계를 시각화하는 함수
-    st.write("### 3. 특성 간 관계")  # 제목 출력
-    fig, ax = plt.subplots(figsize=(8, 6))  # 그래프 크기 설정
-    
-    # Glucose와 BMI 간의 산점도
-    sns.scatterplot(x=data['Glucose'], y=data['BMI'], hue=data['Outcome'], palette='coolwarm', ax=ax)  # 산점도 그리기
-    ax.set_title('Glucose와 BMI 간 관계')  # 제목 설정
-    ax.set_xlabel('Glucose')  # x축 레이블
-    ax.set_ylabel('BMI')  # y축 레이블
-    
-    st.pyplot(fig)  # Streamlit에서 시각화된 그래프 출력
+# 상관관계 히트맵
+def plot_correlation_matrix(data):
+    corr = data.corr()  # 상관관계 계산
+    fig, ax = plt.subplots(figsize=(10, 8))
+    sns.heatmap(corr, annot=True, cmap='coolwarm', fmt='.2f', linewidths=0.5, ax = ax)
+    st.write("### 2. 상관관계 히트맵")
+    st.pyplot(fig)
+
+# 특성 중요도 시각화 함수
+def plot_feature_importances(model, feature_names):
+    feature_importances = model.feature_importances_  # 특성 중요도 추출
+    feature_importance_df = pd.DataFrame({
+        'Feature': feature_names,
+        'Importance': feature_importances
+    }).sort_values(by='Importance', ascending=False)  # 중요도에 따라 정렬
+
+    # 특성 중요도를 막대그래프로 시각화
+    fig, ax = plt.subplots(figsize=(8, 6))
+    sns.barplot(x='Importance', y='Feature', data=feature_importance_df, ax=ax, palette='viridis')
+    plt.title('특성 중요도 (Feature Importance)')
+    st.write("### 3. 특성 중요도")
+    st.pyplot(fig)
 
 # Streamlit 앱 실행 함수
 def run_streamlit_app():
@@ -123,17 +108,31 @@ def run_streamlit_app():
 
     # 모델 학습
     model = train_model(X_train, y_train)  # 학습 데이터로 모델 학습
-
-    # 모델 저장
-    save_model(model)  # 학습된 모델 저장
-
+    
+    # 예측 수행
+    y_pred = model.predict(X_test)
+    
     # 모델 평가
-    accuracy = evaluate_model(model, X_test, y_test)  # 테스트 데이터로 모델 평가
-    print(f'Model Accuracy: {accuracy * 100:.2f}%')  # 모델 정확도 출력
+    # R2, MSE, MAE 계산
+    r2 = r2_score(y_test, y_pred)  # R² (결정계수)
+    mse = mean_squared_error(y_test, y_pred)  # MSE (평균 제곱 오차)
+    mae = mean_absolute_error(y_test, y_pred)  # MAE (평균 절대 오차)
+
+    # 평가 결과 출력
+    st.write(f"R² (결정계수): {r2:.2f}")
+    st.write(f"MSE (평균 제곱 오차): {mse:.2f}")
+    st.write(f"MAE (평균 절대 오차): {mae:.2f}")
+
+    # 정확도 출력 (분류 모델에서 정확도도 확인 가능)
+    accuracy = model.score(X_test, y_test)
+    st.write(f"Accuracy: {accuracy:.2f}")
 
     # 데이터 시각화
     visualize_data(data)  # 데이터의 분포 시각화
-    visualize_feature_relationships(data)  # 특성 간 관계 시각화
+    plot_correlation_matrix(data)  # 특성 간 관계 히트맵 시각화
+
+    # 특성 중요도 시각화
+    plot_feature_importances(model, selected_features)  # 특성 중요도 시각화
 
     # 사용자 입력 받기
     st.write("### 4. 예측하기")  # 제목 출력
